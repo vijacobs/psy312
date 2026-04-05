@@ -1,0 +1,200 @@
+---
+title: "report 2"
+author: "Victor Jacobs"
+date: "2026-04-05"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r data wrangling}
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+
+peer_raw <- read_excel(
+  "Short Report 02_Data (1).xlsx",
+  sheet = "1_Peer Group Salaries",
+  col_names = FALSE)
+
+peer_unadj <- peer_raw %>%
+  slice(5:n()) %>%  
+  select(1:5)
+
+colnames(peer_unadj) <- c("institution", "all_fac","full", "associate", "assistant")
+
+peer_unadj_long <- peer_unadj %>%
+  pivot_longer(cols = c(assistant, associate, full), names_to = "rank", values_to = "salary") %>%
+  mutate(adjustment = "Unadjusted")
+
+peer_cola <- peer_raw %>%
+  slice(5:n()) %>%
+  select(6:10)
+
+colnames(peer_cola) <- c("institution", "all_fac", "full", "associate", "assistant")
+
+peer_cola_long <- peer_cola %>%
+  pivot_longer(cols = c(assistant, associate, full), names_to = "rank",
+    values_to = "salary") %>%
+  mutate(adjustment = "COLA-adjusted")
+
+peer_long <- bind_rows(peer_unadj_long, peer_cola_long) %>%
+  mutate(rank = factor(rank, levels = c("assistant", "associate", "full")),
+    adjustment = factor(adjustment, levels = c("Unadjusted", "COLA-adjusted")))
+
+
+
+davidson_salary <- read_excel("Short Report 02_Data (1).xlsx", sheet = "2_Inf-Adj Davidson Salaries")
+
+colnames(davidson_salary) <- c("year", "all", "full", "associate", "assistant")
+
+davidson_long <- davidson_salary %>% pivot_longer(-year, names_to = "rank", values_to = "salary_real")
+
+
+
+tuition <- read_excel("Short Report 02_Data (1).xlsx", sheet = "3_Inf_Adj Tuition Fees")
+
+colnames(tuition) <- c("year", "tuition_nominal", "inflation_factor", "tuition_real")
+
+tuition <- tuition %>% select(year, tuition_real)
+
+
+
+endowment <- read_excel("Short Report 02_Data (1).xlsx", sheet = "5_Inf_Adj Endowment")
+
+colnames(endowment) <- c("year", "endowment_real")
+
+
+
+endow_detail <- read_excel("Short Report 02_Data (1).xlsx", sheet = "6_Inf_Adj Endow Faculty Student")
+
+
+
+expenses <- read_excel("Short Report 02_Data (1).xlsx", sheet = "7_Davidson Expenses")
+
+colnames(expenses) <- c("category", "amount")
+
+expenses <- expenses %>%
+  filter(category != "Total expenses (F1920)")
+```
+
+
+
+```{r 1. strip plot}
+
+library(ggplot2)
+
+
+ggplot(peer_long, aes(x = rank, y = salary, color = rank)) +
+  geom_jitter(width = 0.15, alpha = 0.6, size = 2, show.legend = FALSE) +
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", color = "black",
+    width = 0.15) +
+  facet_wrap(~ adjustment) +
+  labs(title = "Faculty Salaries at Peer Institutions by Rank",
+    subtitle = "Black points and bars show mean ± standard error",
+    x = "Faculty Rank",y = "Salary") +
+  theme_minimal()
+
+```
+
+Faculty salaries at Davidson are consistently lower than those at peer institutions across all ranks.
+
+```{r 2. Line plot}
+
+ggplot(davidson_long, aes(x = year, y = salary_real, color = rank)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2) +
+  labs(title = "Inflation-Adjusted Faculty Salaries at Davidson College",
+    subtitle = "By Rank, Across Fiscal Years", x = "Fiscal Year",
+    y = "Salary (Inflation-Adjusted $)", color = "Rank") + 
+  theme_minimal()
+
+
+```
+
+Inflation-adjusted faculty salaries at Davidson have grown only little over time.
+
+```{r 3. Heatmap}
+
+ggplot(tuition, aes(x = year, y = 1, fill = tuition_real)) +
+  geom_tile(color = "white") +
+   labs(title = "Inflation-Adjusted Tuition and Fees Over Time",
+    subtitle = "Darker shading indicates higher tuition levels", x = "Fiscal Year", y = NULL, fill = "Tuition") +
+  theme_minimal()
+ 
+```
+
+Inflation-adjusted tuition and fees at Davidson have steadily increased over time.
+
+
+```{r 4. scatterplot}
+library(dplyr)
+
+avg_salary <- davidson_long %>%
+  group_by(year) %>%
+  summarize(avg_salary = mean(salary_real, na.rm = TRUE))
+
+merged <- avg_salary %>%
+  left_join(tuition, by = "year")
+
+
+ggplot(merged, aes(x = tuition_real, y = avg_salary)) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Faculty Salaries vs Tuition Over Time",
+    subtitle = "Each point represents a fiscal year",
+    x = "Tuition and Fees (Inflation-Adjusted $)",
+    y = "Average Faculty Salary (Inflation-Adjusted") +
+    theme_minimal()
+```
+
+Increases in tuition have outpaced growth in average faculty salaries over time.
+
+
+```{r 5. Bar plot}
+
+ggplot(endowment, aes(x = factor(year), y = endowment_real)) +
+  geom_col() +
+  labs(title = "Inflation-Adjusted Endowment Over Time",
+    subtitle = "Davidson College Endowment by Fiscal Year", x = "Fiscal Year",
+    y = "Endowment (Inflation-Adjusted)") +
+  theme_minimal()
+
+```
+Davidson College’s inflation-adjusted endowment has grown substantially over time.
+
+
+```{r 6. Bubble Plot}
+
+ggplot(endow_detail, aes(x = Year...1, y = `Per Student`, size = `Per Faculty Member`)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Inflation-Adjusted Endowment per Student Over Time",
+    subtitle = "Bubble size represents inflation-adjusted endowment per faculty member", x = "Fiscal Year", y = "Endowment per Student (Inflation-Adjusted)", size = "Endowment per Faculty") +
+  theme_minimal()
+
+
+```
+Endowment resources per student and per faculty member have increased over time, indicating growing institutional capacity.
+
+```{r 7. Treemap}
+
+library(treemapify)
+
+ggplot(expenses, aes(area = amount, fill = category, label = category)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "white", place = "centre", reflow = TRUE) +
+  labs(title = "Davidson College Expenditures", subtitle = "Latest Fiscal Year Available") +
+  theme_minimal()
+
+```
+
+Faculty compensation represents only a portion of total institutional expenditures relative to other spending categories.
+
+
+
